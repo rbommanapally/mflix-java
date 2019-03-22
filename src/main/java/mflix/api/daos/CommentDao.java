@@ -3,12 +3,10 @@ package mflix.api.daos;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoWriteException;
 import com.mongodb.ReadConcern;
+import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
-import com.mongodb.client.model.Aggregates;
-import com.mongodb.client.model.Filters;
-import com.mongodb.client.model.Sorts;
-import com.mongodb.client.model.Updates;
+import com.mongodb.client.model.*;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import mflix.api.models.Comment;
@@ -79,12 +77,12 @@ public class CommentDao extends AbstractMFlixDao {
    * returns the resulting Comment object.
    */
   public Comment addComment(Comment comment) {
-
-    // TODO> Ticket - Update User reviews: implement the functionality that enables adding a new
-    // comment.
+    if (comment.getId() == null)
+      throw new IncorrectDaoOperation("");
+    commentCollection.insertOne(comment);
+    return comment;
     // TODO> Ticket - Handling Errors: Implement a try catch block to
     // handle a potential write exception when given a wrong commentId.
-    return null;
   }
 
   /**
@@ -101,9 +99,17 @@ public class CommentDao extends AbstractMFlixDao {
    * @return true if successfully updates the comment text.
    */
   public boolean updateComment(String commentId, String text, String email) {
+    Bson query = Filters.eq("_id", new ObjectId(commentId));
+    Comment comment = commentCollection.find(query).first();
 
-    // TODO> Ticket - Update User reviews: implement the functionality that enables updating an
-    // user own comments
+    if(comment == null) {
+      throw new IncorrectDaoOperation("");
+    }
+
+    if (comment.getEmail().equals(email)) {
+      commentCollection.updateOne(query, Updates.set("text", text));
+      return true;
+    }
     // TODO> Ticket - Handling Errors: Implement a try catch block to
     // handle a potential write exception when given a wrong commentId.
     return false;
@@ -117,8 +123,17 @@ public class CommentDao extends AbstractMFlixDao {
    * @return true if successful deletes the comment.
    */
   public boolean deleteComment(String commentId, String email) {
-    // TODO> Ticket Delete Comments - Implement the method that enables the deletion of a user
-    // comment
+    if("".equals(commentId))
+      throw new IllegalArgumentException();
+    Bson query = new Document("_id", new ObjectId(commentId));
+    Comment comment = commentCollection.find(query).first();
+    if (comment == null) {
+      return false;
+    }
+    if (comment.getEmail().equals(email)) {
+      commentCollection.findOneAndDelete(query);
+      return true;
+    }
     // TIP: make sure to match only users that own the given commentId
     // TODO> Ticket Handling Errors - Implement a try catch block to
     // handle a potential write exception when given a wrong commentId.
@@ -133,13 +148,18 @@ public class CommentDao extends AbstractMFlixDao {
    * @return List {@link Critic} objects.
    */
   public List<Critic> mostActiveCommenters() {
+    MongoCollection<Critic> criticCollection =
+            db.getCollection(COMMENT_COLLECTION, Critic.class).withCodecRegistry(pojoCodecRegistry);
+
     List<Critic> mostActive = new ArrayList<>();
-    // // TODO> Ticket: User Report - execute a command that returns the
-    // // list of 20 users, group by number of comments. Don't forget,
-    // // this report is expected to be produced with an high durability
-    // // guarantee for the returned documents. Once a commenter is in the
-    // // top 20 of users, they become a Critic, so mostActive is composed of
-    // // Critic objects.
+    List<Bson> pipeline = new ArrayList<>();
+
+    pipeline.add(Aggregates.group("$email", Accumulators.sum("count", 1L)));
+    pipeline.add(Aggregates.sort(Sorts.descending("count")));
+    pipeline.add(Aggregates.limit(20));
+
+    criticCollection.aggregate(pipeline).into(mostActive);
+
     return mostActive;
   }
 }

@@ -59,9 +59,7 @@ public class UserDao extends AbstractMFlixDao {
    */
   public boolean addUser(User user) throws IncorrectDaoOperation {
     usersCollection.insertOne(user);
-
     return true;
-
   }
 
   /**
@@ -71,13 +69,16 @@ public class UserDao extends AbstractMFlixDao {
    * @param jwt - jwt string token
    * @return true if successful
    */
-  public boolean createUserSession(String userId, String jwt) {
-    Session session = new Session();
-    session.setUserId(userId);
-    session.setJwt(jwt);
-
-    sessionsCollection.insertOne(session);
-    return true;
+  public boolean createUserSession(String userId, String jwt) throws IncorrectDaoOperation {
+    try {
+        Bson updateFilter = new Document("user_id", userId);
+        Bson setUpdate = Updates.set("jwt", jwt);
+        UpdateOptions options = new UpdateOptions().upsert(true);
+        sessionsCollection.updateOne(updateFilter, setUpdate, options);
+        return true;
+      } catch (MongoWriteException e) {
+        throw new IncorrectDaoOperation(e.getMessage());
+      }
     //TODO > Ticket: Handling Errors - implement a safeguard against
     // creating a session with the same jwt token.
   }
@@ -137,10 +138,10 @@ public class UserDao extends AbstractMFlixDao {
    * @return User object that just been updated.
    */
   public boolean updateUserPreferences(String email, Map<String, ?> userPreferences) {
-    //TODO> Ticket: User Preferences - implement the method that allows for user preferences to
-    // be updated.
-    //TODO > Ticket: Handling Errors - make this method more robust by
-    // handling potential exceptions when updating an entry.
-    return false;
+    if(userPreferences == null)
+      throw new IncorrectDaoOperation("The preferences should not be null");
+    Bson query = Filters.eq("email", email);
+    usersCollection.updateOne(query, Updates.set("preferences", new Document((Map<String, Object>) userPreferences)));
+    return true;
   }
 }
